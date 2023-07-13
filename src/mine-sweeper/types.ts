@@ -11,9 +11,21 @@ export interface ICell {
     state: ECellState;
 }
 
-export interface ICellMeta {
-    y: number;
+export interface ICellIndex {
     x: number;
-    value?: TCellValue;
-    state?: ECellState;
+    y: number;
 }
+
+export type TCellWithMeta = ICell & ICellIndex;
+
+export type TCellMetaRes = { cellIndex: ICellIndex } & (
+    | {
+          state: ECellState.Opened;
+          value: TCellValue;
+      }
+    | {
+          state: Exclude<ECellState, ECellState.Opened>;
+      }
+);
+
+export type Nullable<T> = T | null | undefined;

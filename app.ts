@@ -1,21 +1,32 @@
-import express from 'express';
-import http from 'http';
 import { Server } from 'socket.io';
 import { MineSweeper } from './src/mine-sweeper';
 
-const app = express();
-const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(3000, {
+    cors: {
+        origin: '*',
+    },
+});
+
+const mineSweeper = new MineSweeper(20, 20, 35);
 
 io.on('connection', socket => {
-    console.log('a user connected');
-    const mineSweeper = new MineSweeper(5, 5, 5);
+    console.log(`a user ${socket.id} connected`);
 
-    socket.emit('game:loaded', mineSweeper.getField());
+    socket.emit('field:loaded', mineSweeper.field);
+
+    socket.on('cell:open:req', data => {
+        if (!mineSweeper.isCellIndexValid(data)) return;
+        const updatedCells = mineSweeper.openCell(data);
+        if (updatedCells.length) {
+            io.emit('field:update', updatedCells);
+        }
+    });
+
+    socket.on('cell:flag:req', data => {
+        if (!mineSweeper.isCellIndexValid(data)) return;
+        const updatedCells = mineSweeper.handleFlagCell(data);
+        if (updatedCells) {
+            io.emit('field:update', mineSweeper.handleFlagCell(data));
+        }
+    });
 });
-
-server.listen(3000, () => {
-    console.log('listening on *:3000');
-});
-
-// const mineSweeper = new MineSweeper(5, 5, 5);

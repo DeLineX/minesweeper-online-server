@@ -1,89 +1,122 @@
 import { Utils } from '../utils';
-import { ECellState, ICell, ICellMeta, TCellValue } from './types';
+import {
+    ECellState,
+    ICell,
+    TCellWithMeta,
+    ICellIndex,
+    TCellValue,
+    Nullable,
+    TCellMetaRes,
+} from './types';
 
 export class MineSweeper {
-    public readonly width: number;
-    public readonly height: number;
-    public readonly minesCount: number;
-    private gameField: ICell[][];
+    private _field: ICell[][];
 
-    constructor(width: number, height: number, minesCount: number) {
-        this.width = width;
-        this.height = height;
-        this.minesCount = minesCount;
-        this.gameField = this.generateField();
-
-        this.printField();
+    get field() {
+        const l = this._field.map(row =>
+            row.map(({ state, value }) =>
+                state === ECellState.Opened ? { state, value } : { state },
+            ),
+        );
+        return l;
     }
 
-    public printField() {
-        console.log(
-            this.gameField
-                .map(row => row.reduce((prev, cell) => prev + cell.value, ''))
-                .join('\n'),
-            '\n',
+    public getField() {
+        return this._field.map(row =>
+            row.map(({ state, value }) =>
+                state === ECellState.Opened ? { state, value } : { state },
+            ),
         );
     }
 
-    private generateMines() {
-        let count = this.minesCount;
-        while (count) {
-            const y = Utils.getRandomInt(0, this.height);
-            const x = Utils.getRandomInt(0, this.width);
+    constructor(
+        private readonly WIDTH: number,
+        private readonly HEIGHT: number,
+        public readonly MINES_COUNT: number,
+    ) {
+        this._field = this.initField();
+    }
 
-            if (this.gameField[y][x].value !== 'X') {
-                this.gameField[y][x] = { value: 'X', state: ECellState.Closed };
+    private generateMines() {
+        let count = this.MINES_COUNT;
+        while (count) {
+            const cellIndex: ICellIndex = Utils.getCellIndex(
+                Utils.getRandomInt(0, this.WIDTH),
+                Utils.getRandomInt(0, this.HEIGHT),
+            );
+
+            const cell = this.getCell(cellIndex);
+
+            if (cell.value !== 'X') {
+                cell.value = 'X';
+                cell.state = ECellState.Closed;
                 count--;
             }
         }
     }
 
-    private getAdjCells(y: number, x: number) {
-        const getAdjCell = (y: number, x: number): ICellMeta => {
-            const cell = this.gameField[y]?.[x];
-            if (!cell) return cell;
+    private getAdjCells({ x, y }: ICellIndex) {
+        const getAdjCell = (
+            offsetX: number,
+            offsetY: number,
+        ): TCellWithMeta | undefined => {
+            const cellIndex = Utils.getCellIndex(x + offsetX, y + offsetY);
+            if (!this.isCellIndexValid(cellIndex)) return;
 
+            const cell = this.getCell({
+                ...cellIndex,
+            });
             return {
-                y,
-                x,
-                value: cell.value,
+                ...cellIndex,
+                ...cell,
             };
         };
 
-        const res: ICellMeta[] = [
-            getAdjCell(y - 1, x - 1),
-            getAdjCell(y - 1, x),
-            getAdjCell(y - 1, x + 1),
-            getAdjCell(y, x + 1),
-            getAdjCell(y + 1, x + 1),
-            getAdjCell(y + 1, x),
-            getAdjCell(y + 1, x - 1),
-            getAdjCell(y, x - 1),
+        const res: Nullable<TCellWithMeta>[] = [
+            getAdjCell(-1, -1),
+            getAdjCell(-1, 0),
+            getAdjCell(-1, 1),
+            getAdjCell(0, -1),
+            getAdjCell(0, 1),
+            getAdjCell(1, -1),
+            getAdjCell(1, 0),
+            getAdjCell(1, 1),
         ];
 
-        return res.filter(Boolean);
+        return res.filter(Boolean) as TCellWithMeta[];
     }
 
     private calculateFieldValues() {
-        for (let i = 0; i < this.height; i++) {
-            for (let j = 0; j < this.width; j++) {
-                if (this.gameField[i][j].value === 'X') continue;
+        for (let i = 0; i < this.HEIGHT; i++) {
+            for (let j = 0; j < this.WIDTH; j++) {
+                const cellIndex: ICellIndex = { x: j, y: i };
+                const cell = this.getCell(cellIndex);
 
-                const adjCells = this.getAdjCells(i, j);
+                if (cell.value === 'X') continue;
+
+                const adjCells = this.getAdjCells(cellIndex);
                 const adjMines = adjCells.reduce(
-                    (prev, cell) => (cell.value === 'X' ? prev + 1 : prev),
+                    (prev, cell) => prev + Number(cell.value === 'X'),
                     0,
                 );
-                this.gameField[i][j].value = adjMines as TCellValue;
+                cell.value = adjMines as TCellValue;
             }
         }
     }
 
-    public generateField() {
-        this.gameField = Array(this.height)
+    private getCell({ x, y }: ICellIndex) {
+        return this._field[y][x];
+    }
+
+    public isCellIndexValid({ x, y }: ICellIndex) {
+        return !!(this._field[y] && this._field[y][x]);
+    }
+
+    public initField() {
+        this._field = Array(this.HEIGHT)
             .fill(null)
             .map<ICell[]>(_ =>
-                Array(this.width)
+                Array(this.WIDTH)
                     .fill(null)
                     .map<ICell>(_ => ({ value: 0, state: ECellState.Closed })),
             );
@@ -91,48 +124,39 @@ export class MineSweeper {
         this.generateMines();
         this.calculateFieldValues();
 
-        return this.gameField;
+        return this._field;
     }
 
-    public getField() {
-        return this.gameField.map(row =>
-            row.map(({ state, value }) =>
-                state === ECellState.Opened ? { state, value } : { state },
-            ),
-        );
-    }
+    public openCell(cellIndex: ICellIndex): TCellMetaRes[] {
+        const openedCells: TCellMetaRes[] = [];
 
-    public openCell(y: number, x: number) {
-        const openedCells: ICellMeta[] = [];
-
-        const recursiveOpen = (y: number, x: number) => {
-            const cell = this.gameField[y][x];
+        const recursiveOpen = (cellIndex: ICellIndex) => {
+            const cell = this.getCell(cellIndex);
 
             if (cell.state != ECellState.Closed) return;
 
             cell.state = ECellState.Opened;
             openedCells.push({
-                y,
-                x,
-                value: cell.value,
+                ...cell,
+                cellIndex,
             });
 
             if (cell.value !== 0) return;
+            const adjCells = this.getAdjCells(cellIndex);
 
-            const adjCells = this.getAdjCells(y, x);
-
-            for (const { y, x } of adjCells) {
-                recursiveOpen(y, x);
+            for (const cellIndex of adjCells) {
+                recursiveOpen(cellIndex);
             }
         };
 
-        recursiveOpen(y, x);
+        recursiveOpen(cellIndex);
 
         return openedCells;
     }
 
-    public handleFlagCell(y: number, x: number): ICellMeta {
-        const cell = this.gameField[y][x];
+    public handleFlagCell(cellIndex: ICellIndex): TCellMetaRes | void {
+        const cell = this.getCell(cellIndex);
+        if (cell.state === ECellState.Opened) return;
 
         switch (cell.state) {
             case ECellState.Closed:
@@ -143,6 +167,9 @@ export class MineSweeper {
                 break;
         }
 
-        return { y, x, state: cell.state };
+        return {
+            state: cell.state,
+            cellIndex,
+        };
     }
 }
