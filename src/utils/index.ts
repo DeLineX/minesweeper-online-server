@@ -1,4 +1,4 @@
-import { ICellIndex } from '../mine-sweeper';
+import { ICellIndex } from '../game';
 
 export class Utils {
     static getRandomInt(min: number, max: number) {
