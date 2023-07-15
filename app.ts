@@ -7,14 +7,20 @@ const io = new Server(3000, {
     },
 });
 
-const mineSweeper = new MineSweeper(20, 20, 100);
+const mineSweeper = new MineSweeper(20, 20, 80);
 
-mineSweeper.on('gameOver', () => {
-    io.emit('game:over', 3);
+mineSweeper.on('updateRestartTime', secondsLeft => {
+    io.emit('game:update:restartTime', secondsLeft);
 });
 
 mineSweeper.on('started', () => {
     io.emit('field:loaded', mineSweeper.field);
+});
+
+mineSweeper.on('update', res => {
+    if (res) {
+        io.emit('field:update', res);
+    }
 });
 
 io.on('connection', socket => {
@@ -22,23 +28,13 @@ io.on('connection', socket => {
 
     socket.emit('field:loaded', mineSweeper.field);
 
-    if (mineSweeper.gameState === 'gameOver') {
-        io.emit('game:over', 3);
-    }
-
-    socket.on('cell:open:req', data => {
-        if (!mineSweeper.isCellIndexValid(data)) return;
-        const updatedCells = mineSweeper.openCell(data);
-        if (updatedCells.length) {
-            io.emit('field:update', updatedCells);
-        }
+    socket.on('cell:open:req', cellIndex => {
+        if (!mineSweeper.isCellIndexValid(cellIndex)) return;
+        mineSweeper.handleOpenCell(cellIndex);
     });
 
-    socket.on('cell:flag:req', data => {
-        if (!mineSweeper.isCellIndexValid(data)) return;
-        const updatedCells = mineSweeper.handleFlagCell(data);
-        if (updatedCells) {
-            io.emit('field:update', mineSweeper.handleFlagCell(data));
-        }
+    socket.on('cell:flag:req', cellIndex => {
+        if (!mineSweeper.isCellIndexValid(cellIndex)) return;
+        mineSweeper.handleFlagCell(cellIndex);
     });
 });

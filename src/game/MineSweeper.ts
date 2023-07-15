@@ -19,13 +19,47 @@ type TCellMetaRes = { cellIndex: ICellIndex } & (
       }
 );
 
-type TGameState = 'started' | 'gameOver' | 'gameWon';
-type TGameHooks = TGameState;
+type TGameStateType = 'started' | 'ended';
+
+interface IGameStateBase {
+    type: TGameStateType;
+}
+
+interface IGameStartedState extends IGameStateBase {
+    type: 'started';
+}
+
+interface IGameEndedState extends IGameStateBase {
+    type: 'ended';
+    status: 'won' | 'lost';
+    secondsLeft: number;
+}
+
+type TGameState = IGameStartedState | IGameEndedState;
+
+interface IGameHooks extends Record<TGameStateType, (...args: any[]) => void> {
+    updateRestartTime: (timeLeft: IGameEndedState['secondsLeft']) => void;
+    update: (res: IFieldUpdateRes) => void;
+}
+
+interface IFieldUpdateRes {
+    updatedCells: TCellMetaRes[];
+    gameState?: IGameEndedState;
+}
+
+interface IMineSweeperConfig {
+    restartTimeout: number;
+}
+
+const DEFAULT_CONFIG: IMineSweeperConfig = {
+    restartTimeout: 3,
+};
 
 export class MineSweeper {
     private _field: Cell[][];
-    private _gameState: TGameState = 'started';
-    private _hooks: Partial<Record<TGameHooks, () => void>> = {};
+    private _gameState: TGameState = { type: 'started' };
+    private _hooks: Partial<IGameHooks> = {};
+    private _config: IMineSweeperConfig;
 
     get field() {
         return this._field.map(row =>
@@ -40,20 +74,25 @@ export class MineSweeper {
     }
 
     constructor(
-        private readonly WIDTH: number,
-        private readonly HEIGHT: number,
-        public readonly MINES_COUNT: number,
+        private readonly _width: number,
+        private readonly _height: number,
+        public readonly minesCount: number,
+        config: IMineSweeperConfig = DEFAULT_CONFIG,
     ) {
-        this._field = this.initField();
+        this._config = {
+            ...config,
+            ...DEFAULT_CONFIG,
+        };
+        this._field = this.startGame();
     }
 
     private generateMines() {
-        let count = this.MINES_COUNT;
+        let count = this.minesCount;
 
         while (count) {
             const cellIndex = Utils.getCellIndex(
-                Utils.getRandomInt(0, this.WIDTH),
-                Utils.getRandomInt(0, this.HEIGHT),
+                Utils.getRandomInt(0, this._width),
+                Utils.getRandomInt(0, this._height),
             );
 
             if (this.getCell(cellIndex)?.value !== 'X') {
@@ -112,9 +151,56 @@ export class MineSweeper {
         this._field[y][x] = cell;
     }
 
-    private trigger(type: TGameHooks) {
-        const callHook = this._hooks[type];
-        if (callHook) callHook();
+    private trigger<Type extends keyof IGameHooks>(
+        type: Type,
+        ...args: Parameters<IGameHooks[Type]>
+    ) {
+        const callHook = this._hooks[type] as (...args: any[]) => void;
+        if (callHook) callHook(...args);
+    }
+
+    private startGame() {
+        this._gameState = { type: 'started' };
+
+        this._field = Array(this._height)
+            .fill(null)
+            .map(_ => []);
+
+        this.generateMines();
+
+        for (let i = 0; i < this._height; i++) {
+            for (let j = 0; j < this._width; j++) {
+                const cellIndex = Utils.getCellIndex(j, i);
+
+                if (this.getCell(cellIndex)?.value === 'X') continue;
+
+                const adjMinesCount = this.getAdjMinesCount(cellIndex);
+                this.setCell(cellIndex, new Cell(adjMinesCount));
+            }
+        }
+
+        this.trigger('started');
+
+        return this._field;
+    }
+
+    private endGame(status: IGameEndedState['status']) {
+        this._gameState = {
+            type: 'ended',
+            status,
+            secondsLeft: this._config.restartTimeout,
+        };
+
+        let secondsLeft = this._config.restartTimeout;
+        const intervalId = setInterval(() => {
+            secondsLeft--;
+            this.trigger('updateRestartTime', secondsLeft);
+
+            if (secondsLeft < 1) {
+                clearInterval(intervalId);
+                this.startGame();
+            }
+        }, 1_000);
     }
 
     public isCellIndexValid({ x, y }: ICellIndex) {
@@ -133,30 +219,9 @@ export class MineSweeper {
         );
     }
 
-    public initField() {
-        this._field = Array(this.HEIGHT)
-            .fill(null)
-            .map(_ => []);
-
-        this.generateMines();
-
-        for (let i = 0; i < this.HEIGHT; i++) {
-            for (let j = 0; j < this.WIDTH; j++) {
-                const cellIndex = Utils.getCellIndex(j, i);
-
-                if (this.getCell(cellIndex)?.value === 'X') continue;
-
-                const adjMinesCount = this.getAdjMinesCount(cellIndex);
-                this.setCell(cellIndex, new Cell(adjMinesCount));
-            }
-        }
-
-        return this._field;
-    }
-
-    public openCell(cellIndex: ICellIndex): TCellMetaRes[] {
-        const openedCells: TCellMetaRes[] = [];
-        if (this._gameState !== 'started') return openedCells;
+    public handleOpenCell(cellIndex: ICellIndex) {
+        const updatedCells: TCellMetaRes[] = [];
+        if (this._gameState.type !== 'started') return;
 
         const recursiveOpen = (cellIndex: ICellIndex) => {
             const cell = this.getCell(cellIndex);
@@ -164,8 +229,8 @@ export class MineSweeper {
             if (cell.state != ECellState.Closed) return;
 
             if (cell.value === 'X') {
-                for (let i = 0; i < this.HEIGHT; i++) {
-                    for (let j = 0; j < this.WIDTH; j++) {
+                for (let i = 0; i < this._height; i++) {
+                    for (let j = 0; j < this._width; j++) {
                         const cellIndex = Utils.getCellIndex(j, i);
                         const cell = this.getCell(cellIndex);
 
@@ -173,7 +238,7 @@ export class MineSweeper {
                             cell.state !== ECellState.Opened &&
                             cell.value === 'X'
                         ) {
-                            openedCells.push({
+                            updatedCells.push({
                                 ...cell.open(),
                                 cellIndex,
                             });
@@ -181,19 +246,10 @@ export class MineSweeper {
                     }
                 }
 
-                this._gameState = 'gameOver';
-                this.trigger('gameOver');
-
-                setTimeout(() => {
-                    this.initField();
-                    this._gameState = 'started';
-                    this.trigger('started');
-                }, 3000);
-
-                return;
+                return this.endGame('lost');
             }
 
-            openedCells.push({
+            updatedCells.push({
                 ...cell.open(),
                 cellIndex,
             });
@@ -208,24 +264,36 @@ export class MineSweeper {
 
         recursiveOpen(cellIndex);
 
-        return openedCells;
+        let gameState: IGameEndedState | undefined;
+        if (this.gameState.type === 'ended') {
+            gameState = this.gameState;
+        }
+
+        this.trigger('update', { updatedCells, gameState });
     }
 
-    public handleFlagCell(cellIndex: ICellIndex): TCellMetaRes | void {
+    public handleFlagCell(cellIndex: ICellIndex) {
         const cell = this.getCell(cellIndex);
 
-        if (this._gameState !== 'started') return;
+        if (this._gameState.type !== 'started') return;
 
         const state = cell.toggleFlag();
         if (state === undefined) return;
 
-        return {
-            state,
-            cellIndex,
-        };
+        this.trigger('update', {
+            updatedCells: [
+                {
+                    state,
+                    cellIndex,
+                },
+            ],
+        });
     }
 
-    public on(type: TGameHooks, callBack: () => void) {
+    public on<Type extends keyof IGameHooks>(
+        type: Type,
+        callBack: IGameHooks[Type],
+    ) {
         this._hooks[type] = callBack;
     }
 }
