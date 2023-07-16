@@ -7,14 +7,14 @@ const io = new Server(3000, {
     },
 });
 
-const mineSweeper = new MineSweeper(20, 20, 80);
+const mineSweeper = new MineSweeper(100, 100, 700);
 
 mineSweeper.on('updateRestartTime', secondsLeft => {
     io.emit('game:update:restartTime', secondsLeft);
 });
 
 mineSweeper.on('started', () => {
-    io.emit('field:loaded', mineSweeper.field);
+    io.emit('field:loaded', mineSweeper.handleLoadField());
 });
 
 mineSweeper.on('update', res => {
@@ -26,7 +26,7 @@ mineSweeper.on('update', res => {
 io.on('connection', socket => {
     console.log(`a user ${socket.id} connected`);
 
-    socket.emit('field:loaded', mineSweeper.field);
+    socket.emit('field:loaded', mineSweeper.handleLoadField());
 
     socket.on('cell:open:req', cellIndex => {
         if (!mineSweeper.isCellIndexValid(cellIndex)) return;

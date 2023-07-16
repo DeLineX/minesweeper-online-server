@@ -12,7 +12,7 @@ export interface ICell {
 }
 
 export class Cell implements ICell {
-    private _state: ECellState;
+    public _state: ECellState;
 
     get state() {
         return this._state;
@@ -40,6 +40,14 @@ export class Cell implements ICell {
             case ECellState.Flagged:
                 return (this._state = ECellState.Closed);
         }
+    }
+
+    public setFlag(): ECellState.Flagged {
+        return (this._state = ECellState.Flagged);
+    }
+
+    public removeFlag(): ECellState.Closed {
+        return (this._state = ECellState.Closed);
     }
 
     public toObj(): ICell {
