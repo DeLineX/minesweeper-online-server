@@ -7,7 +7,7 @@ const io = new Server(3000, {
     },
 });
 
-const mineSweeper = new MineSweeper(100, 100, 700);
+const mineSweeper = new MineSweeper(50, 50, 200);
 
 mineSweeper.on('updateRestartTime', secondsLeft => {
     io.emit('game:update:restartTime', secondsLeft);
